@@ -8,8 +8,8 @@
 import argparse
 import datetime
 import json
+import os
 import pathlib
-from turtle import down
 import requests
 
 import environ
@@ -34,6 +34,21 @@ class DropboxAPIError(Exception):
     pass
 
 
+def delete_empty_folders(root):
+
+    deleted = set()
+
+    for current_dir, subdirs, files in os.walk(root, topdown=False):
+        print(f"In {current_dir}")
+        print(f"subdirs: {subdirs}")
+        print(f"files: {files}")
+        print()
+        if not (files or subdirs):
+            deleted.add(current_dir)
+            os.rmdir(current_dir)
+    return deleted
+
+
 def download_file(dropbox_path):
     headers = {
         "Authorization": f"Bearer {TOKEN}",
@@ -54,6 +69,7 @@ def handle_folder(root_folder, entry):
     local_path = root_folder / entry["path_display"].lstrip("/")
     if not local_path.exists():
         write_log(f"Creating new folder ${local_path}")
+        print(f"Creating new folder ${local_path}")
         local_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -72,6 +88,8 @@ def handle_file(root_folder, entry):
         try:
             res = download_file(dropbox_path)
             local_path.write_bytes(res.content)
+            print(f"Saved {local_path}")
+            write_log(f"Saved {local_path}")
         except DropboxAPIError as e:
             write_log(f"Error downloading {dropbox_path}")
 
