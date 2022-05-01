@@ -78,7 +78,6 @@ def handle_file(root_folder, entry):
 
 def handle_entries(root_folder, entries):
     for entry in entries:
-        print(f"entry: {entry}")
         if entry[".tag"] == "folder":
             handle_folder(root_folder, entry)
         elif entry[".tag"] == "file":
@@ -94,9 +93,7 @@ def download_folder(dropbox_path, root_folder=TEST_FOLDER):
         write_log(f"Download folder error - {res.status_code}: {res.content}")
         raise DropboxAPIError
     res_json = res.json()
-    print(res_json)
     entries = res_json["entries"]
-    print(f"got {len(entries)} entries")
     handle_entries(root_folder, entries)
     cursor = res_json.get("cursor", "")
     has_more = res_json.get("has_more", False)
