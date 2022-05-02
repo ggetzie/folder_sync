@@ -13,12 +13,13 @@ import pathlib
 import requests
 
 import environ
+from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse as dt_parse
 from dateutil.tz import gettz
 
 ROOT_DIR = environ.Path(__file__) - 1
 TEST_FOLDER = pathlib.Path(ROOT_DIR) / "test"
-LOGFILE = ROOT_DIR.path("log")
+LOGFILE = pathlib.Path(ROOT_DIR.path("log"))
 env = environ.Env()
 env.read_env((str(ROOT_DIR.path(".env"))))
 TOKEN = env("DROPBOX_TOKEN")
@@ -35,18 +36,37 @@ class DropboxAPIError(Exception):
     pass
 
 
+def cleanup(current_paths, root_folder):
+    for current, _, files in os.walk(root_folder):
+        for f in files:
+            p = pathlib.Path(current) / f
+            if str(p) not in current_paths:
+                write_log(f"Removed filed {p} - not found in Dropbox")
+                os.remove(p)
+
+
+def prune_log():
+    # delete log entries older than 30 days
+    def under30(d):
+        now = datetime.datetime.now()
+        thirtyago = now - relativedelta(days=30)
+        return d > thirtyago
+
+    lines = [
+        line.strip() for line in LOGFILE.open() if under30(dt_parse(line.split()[0]))
+    ]
+    LOGFILE.write_text("\n".join(lines))
+
+
 def delete_empty_folders(root):
 
     deleted = set()
 
     for current_dir, subdirs, files in os.walk(root, topdown=False):
-        print(f"In {current_dir}")
-        print(f"subdirs: {subdirs}")
-        print(f"files: {files}")
-        print()
         if not (files or subdirs):
             deleted.add(current_dir)
             os.rmdir(current_dir)
+            write_log(f"Removed empty directory {current_dir}")
     return deleted
 
 
@@ -70,7 +90,6 @@ def handle_folder(root_folder, entry):
     local_path = root_folder / entry["path_display"].lstrip("/")
     if not local_path.exists():
         write_log(f"Creating new folder ${local_path}")
-        print(f"Creating new folder ${local_path}")
         local_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -78,8 +97,6 @@ def handle_file(root_folder, entry):
     # download files if they don't exist or if the
     # dropbox modified time is more recent than the local modified time
     dropbox_path = entry["path_display"]
-    print(dropbox_path)
-    print(root_folder)
     local_path = root_folder / (dropbox_path.lstrip("/"))
     local_path.parent.mkdir(parents=True, exist_ok=True)
     needs_download = False
@@ -95,7 +112,6 @@ def handle_file(root_folder, entry):
         try:
             res = download_file(dropbox_path)
             local_path.write_bytes(res.content)
-            print(f"Saved {local_path}")
             write_log(f"Saved {local_path}")
         except DropboxAPIError as e:
             write_log(f"Error downloading {dropbox_path}")
@@ -166,4 +182,9 @@ if __name__ == "__main__":
     if not dropbox_path[0] == "/":
         raise InvalidDropboxPath("Dropbox path must start with '/'")
     output = args.output[0]
-    download_folder(dropbox_path=dropbox_path, root_folder=output)
+    current_paths = download_folder(dropbox_path=dropbox_path, root_folder=output)
+    for cp in current_paths:
+        print(cp)
+    cleanup(current_paths, output)
+    delete_empty_folders(output)
+    prune_log()
