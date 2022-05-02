@@ -183,8 +183,6 @@ if __name__ == "__main__":
         raise InvalidDropboxPath("Dropbox path must start with '/'")
     output = args.output[0]
     current_paths = download_folder(dropbox_path=dropbox_path, root_folder=output)
-    for cp in current_paths:
-        print(cp)
     cleanup(current_paths, output)
     delete_empty_folders(output)
     prune_log()
