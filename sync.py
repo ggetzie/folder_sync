@@ -14,9 +14,10 @@ import requests
 
 import environ
 from dateutil.parser import parse as dt_parse
+from dateutil.tz import gettz
 
 ROOT_DIR = environ.Path(__file__) - 1
-TEST_FOLDER = ROOT_DIR.path("test")
+TEST_FOLDER = pathlib.Path(ROOT_DIR) / "test"
 LOGFILE = ROOT_DIR.path("log")
 env = environ.Env()
 env.read_env((str(ROOT_DIR.path(".env"))))
@@ -74,15 +75,21 @@ def handle_folder(root_folder, entry):
 
 
 def handle_file(root_folder, entry):
+    # download files if they don't exist or if the
+    # dropbox modified time is more recent than the local modified time
     dropbox_path = entry["path_display"]
-    local_path = root_folder / dropbox_path.lstrip("/")
+    print(dropbox_path)
+    print(root_folder)
+    local_path = root_folder / (dropbox_path.lstrip("/"))
     local_path.parent.mkdir(parents=True, exist_ok=True)
     needs_download = False
     if not local_path.exists():
         needs_download = True
     else:
         last_mod_dropbox = dt_parse(entry["client_modified"])
-        last_mod_local = datetime.datetime.fromtimestamp(local_path.stat().st_mtime)
+        last_mod_local = datetime.datetime.fromtimestamp(
+            local_path.stat().st_mtime, tz=gettz()
+        )
         needs_download = last_mod_dropbox > last_mod_local
     if needs_download:
         try:
@@ -92,18 +99,14 @@ def handle_file(root_folder, entry):
             write_log(f"Saved {local_path}")
         except DropboxAPIError as e:
             write_log(f"Error downloading {dropbox_path}")
-
-
-def handle_entries(root_folder, entries):
-    for entry in entries:
-        if entry[".tag"] == "folder":
-            handle_folder(root_folder, entry)
-        elif entry[".tag"] == "file":
-            handle_file(root_folder, entry)
+    else:
+        write_log(f"{dropbox_path} up to date.")
+    return {str(local_path)}
 
 
 def download_folder(dropbox_path, root_folder=TEST_FOLDER):
-    data = {"path": dropbox_path, "recursive": True}
+    current_paths = set()
+    data = {"path": dropbox_path, "recursive": False}
     res = requests.post(
         URL_BASE + "list_folder", headers=HEADERS, data=json.dumps(data)
     )
@@ -112,7 +115,13 @@ def download_folder(dropbox_path, root_folder=TEST_FOLDER):
         raise DropboxAPIError
     res_json = res.json()
     entries = res_json["entries"]
-    handle_entries(root_folder, entries)
+    for entry in entries:
+        if entry[".tag"] == "folder":
+            current_paths = current_paths | download_folder(
+                entry["path_display"], root_folder
+            )
+        elif entry[".tag"] == "file":
+            current_paths = current_paths | handle_file(root_folder, entry)
     cursor = res_json.get("cursor", "")
     has_more = res_json.get("has_more", False)
     while has_more:
@@ -125,11 +134,17 @@ def download_folder(dropbox_path, root_folder=TEST_FOLDER):
             raise DropboxAPIError
         res_json = res.json()
         entries = res_json["entries"]
-        handle_entries(root_folder, entries)
+        for entry in entries:
+            if entry[".tag"] == "folder":
+                current_paths = current_paths | download_folder(
+                    entry["path_display"], root_folder
+                )
+            elif entry[".tag"] == "file":
+                current_paths = current_paths | handle_file(root_folder, entry)
         cursor = res_json.get("cursor", "")
         has_more = res_json.get("has_more", False)
 
-    return res_json
+    return current_paths
 
 
 if __name__ == "__main__":
