@@ -7,7 +7,7 @@ After=network.target
 Type=simple
 User=calibre
 Group=webapps
-ExecStart=/opt/calibre/calibre-server /usr/local/lib/calibre/books --enable-local-write --enable-auth
+ExecStart=/opt/calibre/calibre-server /usr/local/lib/calibre/books --enable-local-write --userdb /usr/local/lib/calibre/users.sqlite --enable-auth 
 
 [Install]
 WantedBy=multi-user.target
