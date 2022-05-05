@@ -1,0 +1,13 @@
+## startup service
+[Unit]
+Description=calibre content server
+After=network.target
+
+[Service]
+Type=simple
+User=calibre
+Group=webapps
+ExecStart=/opt/calibre/calibre-server /usr/local/lib/calibre/books --enable-local-write
+
+[Install]
+WantedBy=multi-user.target
